@@ -7,7 +7,9 @@ const DELAY_MS = 3 * 60 * 1000;
 const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 30 * 1000;
 
-// ✅ Envia dados da quest pro index.ts via stdout
+// ============================================================
+// EMIT QUEST DATA — envia pro index.ts via stdout
+// ============================================================
 function emitQuestData(quest: any, task: string, current: number) {
 	const hero = quest.config.assets?.hero ?? null;
 	const target = quest.config.task_config_v2.tasks[task]?.target ?? 100;
@@ -23,7 +25,9 @@ function emitQuestData(quest: any, task: string, current: number) {
 	console.log(`__QUEST_DATA__${JSON.stringify(data)}__QUEST_DATA__`);
 }
 
-// ✅ Envia atualização de progresso
+// ============================================================
+// EMIT PROGRESS — envia atualização
+// ============================================================
 function emitProgress(quest: any, task: string, current: number) {
 	const target = quest.config.task_config_v2.tasks[task]?.target ?? 100;
 	const data = {
@@ -34,7 +38,9 @@ function emitProgress(quest: any, task: string, current: number) {
 	console.log(`__PROGRESS_UPDATE__${JSON.stringify(data)}__PROGRESS_UPDATE__`);
 }
 
-// ✅ Detecta o tipo de task da quest (igual ao doingQuest original)
+// ============================================================
+// DETECTAR TIPO DE TASK (mesma ordem do doingQuest original)
+// ============================================================
 function getTaskName(quest: any): string {
 	const tasks = quest.config.task_config_v2.tasks;
 	const order = [
@@ -53,15 +59,18 @@ function getTaskName(quest: any): string {
 	return 'UNKNOWN';
 }
 
+// ============================================================
+// READY
+// ============================================================
 client.once(GatewayDispatchEvents.Ready, async ({ data }) => {
 	console.log(`Logged in as @${data.user.username}`);
 
 	// =========================================================
-	// MODO PROFILE
+	// MODO PROFILE — retorna dados reais da conta do token
 	// =========================================================
 	if (MODE === 'profile') {
 		try {
-			await client.fetchQuests(false);
+			await client.fetchQuests(false); // GET /quests/@me
 			const quests = client.questManager!.filterQuestsValidToDo();
 
 			const profile = {
@@ -98,13 +107,12 @@ client.once(GatewayDispatchEvents.Ready, async ({ data }) => {
 	}
 
 	// =========================================================
-	// Helper: monitor de progresso em background
+	// Monitor de progresso em background (a cada 2s)
 	// =========================================================
 	function startProgressMonitor(quest: any, taskName: string) {
 		const initial = quest.userStatus?.progress?.[taskName]?.value ?? 0;
 		emitQuestData(quest, taskName, initial);
 
-		// Monitor a cada 2s
 		const interval = setInterval(() => {
 			const current = quest.userStatus?.progress?.[taskName]?.value ?? 0;
 			emitProgress(quest, taskName, current);
@@ -114,18 +122,17 @@ client.once(GatewayDispatchEvents.Ready, async ({ data }) => {
 	}
 
 	// =========================================================
-	// Helper: executa com retry + monitor
+	// Executa quest com retry + monitor
 	// =========================================================
 	async function runQuest(quest: any): Promise<boolean> {
 		const name = quest.config.messages.quest_name;
 		const taskName = getTaskName(quest);
 
-		// Inicia o monitor de progresso
 		const stopMonitor = startProgressMonitor(quest, taskName);
 
 		for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
 			try {
-				await client.questManager!.doingQuest(quest);
+				await client.questManager!.doingQuest(quest); // API real
 				stopMonitor();
 				console.log(`Completed: "${name}"`);
 				return true;
@@ -144,12 +151,12 @@ client.once(GatewayDispatchEvents.Ready, async ({ data }) => {
 		return false;
 	}
 
-	// -------- PARALELO --------
+	// -------- MODO PARALELO --------
 	if (MODE === 'all_parallel') {
 		await Promise.allSettled(quests.map((q) => runQuest(q)));
 	}
 
-	// -------- 1 POR 1 COM DELAY --------
+	// -------- MODO 1 POR 1 COM DELAY --------
 	if (MODE === 'sequential_delay' || MODE === 'all_delay') {
 		for (const [i, quest] of quests.entries()) {
 			const name = quest.config.messages.quest_name;
@@ -163,12 +170,14 @@ client.once(GatewayDispatchEvents.Ready, async ({ data }) => {
 	}
 
 	// =========================================================
-	// AUTO-CLAIM — usa API real filterQuestsValidToRedeem + redeemQuest
+	// AUTO-CLAIM — usa APIs REAIS
+	// filterQuestsValidToRedeem() + redeemQuest()
 	// =========================================================
 	console.log('Checking rewards to claim...');
 	try {
-		await client.fetchQuests(false);
-		const toRedeem = client.questManager!.filterQuestsValidToRedeem();
+		await client.fetchQuests(false); // GET /quests/@me (atualizado)
+		const toRedeem = client.questManager!.filterQuestsValidToRedeem(); // API real
+
 		console.log(`Found ${toRedeem.length} rewards to claim.`);
 
 		if (toRedeem.length === 0) {
@@ -177,7 +186,8 @@ client.once(GatewayDispatchEvents.Ready, async ({ data }) => {
 			for (const quest of toRedeem) {
 				const name = quest.config.messages.quest_name;
 				try {
-					// ✅ API real: POST /quests/{id}/claim-reward
+					// API real: POST /quests/{id}/claim-reward
+					// O próprio redeemQuest() já resolve captcha se configurado
 					await client.questManager!.redeemQuest(quest);
 					console.log(`Claimed: "${name}"`);
 				} catch (err: any) {
