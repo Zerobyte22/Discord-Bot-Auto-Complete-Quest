@@ -9,21 +9,16 @@ const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 30 * 1000;
 
 // ============================================================
-// EXTRAI ORBS DA QUEST (API real: rewards_config.rewards)
+// EXTRAI ORBS DA QUEST (API real)
 // ============================================================
 function getQuestOrbs(quest: any): { orbs: number; rewardName: string | null } {
 	try {
 		const rewards = quest.config.rewards_config?.rewards ?? [];
 		let orbs = 0;
 		let rewardName: string | null = null;
-
 		for (const r of rewards) {
-			if (r.orb_quantity && r.orb_quantity > 0) {
-				orbs += r.orb_quantity;
-			}
-			if (!rewardName && r.messages?.name) {
-				rewardName = r.messages.name;
-			}
+			if (r.orb_quantity && r.orb_quantity > 0) orbs += r.orb_quantity;
+			if (!rewardName && r.messages?.name) rewardName = r.messages.name;
 		}
 		return { orbs, rewardName };
 	} catch {
@@ -31,9 +26,6 @@ function getQuestOrbs(quest: any): { orbs: number; rewardName: string | null } {
 	}
 }
 
-// ============================================================
-// EMIT QUEST DATA (com Orbs)
-// ============================================================
 function emitQuestData(quest: any, task: string, current: number) {
 	const hero = quest.config.assets?.hero ?? null;
 	const target = quest.config.task_config_v2.tasks[task]?.target ?? 100;
@@ -80,7 +72,9 @@ function getTaskName(quest: any): string {
 client.once(GatewayDispatchEvents.Ready, async ({ data }) => {
 	console.log(`Logged in as @${data.user.username}`);
 
+	// =========================================================
 	// MODO PROFILE
+	// =========================================================
 	if (MODE === 'profile') {
 		try {
 			await client.fetchQuests(false);
@@ -104,35 +98,9 @@ client.once(GatewayDispatchEvents.Ready, async ({ data }) => {
 		process.exit(0);
 	}
 
-	// MODO CLAIM ONLY
-	if (MODE === 'claim_only') {
-		console.log('Checking rewards to claim...');
-		try {
-			await client.fetchQuests(false);
-			const toRedeem = client.questManager!.filterQuestsValidToRedeem();
-			console.log(`Found ${toRedeem.length} rewards to claim.`);
-
-			if (toRedeem.length === 0) {
-				console.log('No rewards to claim.');
-			} else {
-				for (const quest of toRedeem) {
-					const name = quest.config.messages.quest_name;
-					try {
-						await client.questManager!.redeemQuest(quest);
-						console.log(`Claimed: "${name}"`);
-					} catch (err: any) {
-						console.log(`Claim failed: "${name}" — ${err?.message ?? err}`);
-					}
-				}
-			}
-		} catch (err: any) {
-			console.log(`Claim check error: ${err?.message ?? err}`);
-		}
-		await client.destroy();
-		process.exit(0);
-	}
-
+	// =========================================================
 	// MODO EXECUÇÃO
+	// =========================================================
 	await client.fetchQuests(false);
 	const quests = client.questManager!.filterQuestsValidToDo();
 	const total = quests.length;
@@ -169,8 +137,8 @@ client.once(GatewayDispatchEvents.Ready, async ({ data }) => {
 				return true;
 			} catch (err: any) {
 				const msg = err?.message ?? String(err);
-				if (msg.includes('429') || msg.includes('rate limited') || msg.includes('RateLimit')) {
-					console.log(`[RateLimit] Detectado em "${name}", aguardando 60s...`);
+				if (msg.includes('429') || msg.includes('rate limited')) {
+					console.log(`[RateLimit] "${name}", aguardando 60s...`);
 					await new Promise((r) => setTimeout(r, 60 * 1000));
 				}
 				if (attempt === MAX_RETRIES) {
@@ -178,7 +146,7 @@ client.once(GatewayDispatchEvents.Ready, async ({ data }) => {
 					console.log(`Failed: "${name}" — ${msg}`);
 					return false;
 				}
-				console.log(`Retry ${attempt}/${MAX_RETRIES} para "${name}": ${msg}`);
+				console.log(`Retry ${attempt}/${MAX_RETRIES} para "${name}"`);
 				await new Promise((r) => setTimeout(r, RETRY_DELAY_MS));
 			}
 		}
@@ -192,16 +160,14 @@ client.once(GatewayDispatchEvents.Ready, async ({ data }) => {
 
 	if (MODE === 'sequential_no_delay') {
 		for (const [i, quest] of quests.entries()) {
-			const name = quest.config.messages.quest_name;
-			console.log(`\n[${i + 1}/${total}] Starting: "${name}"`);
+			console.log(`\n[${i + 1}/${total}] Starting: "${quest.config.messages.quest_name}"`);
 			await runQuest(quest);
 		}
 	}
 
 	if (MODE === 'sequential_delay' || MODE === 'all_delay') {
 		for (const [i, quest] of quests.entries()) {
-			const name = quest.config.messages.quest_name;
-			console.log(`\n[${i + 1}/${total}] Starting: "${name}"`);
+			console.log(`\n[${i + 1}/${total}] Starting: "${quest.config.messages.quest_name}"`);
 			await runQuest(quest);
 			if (i < total - 1) {
 				console.log('Waiting 3 min before next...');
