@@ -93,13 +93,13 @@ client.once(GatewayDispatchEvents.Ready, async ({ data }) => {
 	}
 
 	// =========================================================
-	// MODO CLAIM ONLY — só resgata recompensas (APIs reais)
+	// MODO CLAIM ONLY — só resgata recompensas
 	// =========================================================
 	if (MODE === 'claim_only') {
 		console.log('Checking rewards to claim...');
 		try {
-			await client.fetchQuests(false); // GET /quests/@me
-			const toRedeem = client.questManager!.filterQuestsValidToRedeem(); // API real
+			await client.fetchQuests(false);
+			const toRedeem = client.questManager!.filterQuestsValidToRedeem();
 
 			console.log(`Found ${toRedeem.length} rewards to claim.`);
 
@@ -109,7 +109,6 @@ client.once(GatewayDispatchEvents.Ready, async ({ data }) => {
 				for (const quest of toRedeem) {
 					const name = quest.config.messages.quest_name;
 					try {
-						// API real: POST /quests/{id}/claim-reward
 						await client.questManager!.redeemQuest(quest);
 						console.log(`Claimed: "${name}"`);
 					} catch (err: any) {
@@ -127,7 +126,7 @@ client.once(GatewayDispatchEvents.Ready, async ({ data }) => {
 	}
 
 	// =========================================================
-	// MODO EXECUÇÃO
+	// MODO EXECUÇÃO (SEM auto-claim no final)
 	// =========================================================
 	await client.fetchQuests(false);
 	const quests = client.questManager!.filterQuestsValidToDo();
@@ -206,30 +205,6 @@ client.once(GatewayDispatchEvents.Ready, async ({ data }) => {
 				await new Promise((r) => setTimeout(r, DELAY_MS));
 			}
 		}
-	}
-
-	// AUTO-CLAIM após execução
-	console.log('Checking rewards to claim...');
-	try {
-		await client.fetchQuests(false);
-		const toRedeem = client.questManager!.filterQuestsValidToRedeem();
-		console.log(`Found ${toRedeem.length} rewards to claim.`);
-
-		if (toRedeem.length === 0) {
-			console.log('No rewards to claim.');
-		} else {
-			for (const quest of toRedeem) {
-				const name = quest.config.messages.quest_name;
-				try {
-					await client.questManager!.redeemQuest(quest);
-					console.log(`Claimed: "${name}"`);
-				} catch (err: any) {
-					console.log(`Claim failed: "${name}" — ${err?.message ?? err}`);
-				}
-			}
-		}
-	} catch (err: any) {
-		console.log(`Claim check error: ${err?.message ?? err}`);
 	}
 
 	console.log('All done. Disconnecting...');
