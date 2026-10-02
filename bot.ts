@@ -1,82 +1,69 @@
 import { GatewayDispatchEvents } from 'discord-api-types/v10';
 import { ClientQuest } from './src/client';
-import { EmbedBuilder } from 'discord.js';
 
 let currentUserId: string | null = null;
 
 const client = new ClientQuest(process.env.TOKEN!);
-const QUEST_FILTER = process.env.QUEST_NAME?.trim() || null;
+
+// Delay entre cada quest (3 minutos)
+const DELAY_BETWEEN_QUESTS_MS = 3 * 60 * 1000;
 
 client.once(GatewayDispatchEvents.Ready, async ({ data, api }) => {
 	currentUserId = data.user.id;
-	console.log(
-		process.env.GITHUB_ACTIONS === 'true'
-			? 'Logged in!'
-			: `Logged in as @${data.user.username}`
-	);
+	console.log(`Logged in as @${data.user.username}`);
 
+	// =========================================================
 	// Abre canal de DM
+	// =========================================================
 	let dmChannelId: string | null = null;
 	try {
 		const dm = await api.users.createDM(currentUserId);
 		dmChannelId = dm.id;
 		console.log('DM channel ready.');
 	} catch (err: any) {
-		console.error('Could not open DM:', err?.message ?? err);
+		console.error('DM error:', err?.message ?? err);
 	}
 
-	const sendDM = async (payload: string | { embeds: EmbedBuilder[] }) => {
+	const sendDM = async (content: string) => {
 		if (!dmChannelId) return;
 		try {
-			if (typeof payload === 'string') {
-				await api.channels.createMessage(dmChannelId, { content: payload });
-			} else {
-				await api.channels.createMessage(dmChannelId, {
-					content: '',
-					embeds: payload.embeds.map((e) => e.toJSON()),
-				});
-			}
+			await api.channels.createMessage(dmChannelId, { content });
 		} catch (err: any) {
-			console.error('DM falhou:', err?.message ?? err);
+			console.error('DM send error:', err?.message ?? err);
 		}
 	};
 
-	// Busca quests
+	// =========================================================
+	// Detecta TODAS as quests disponíveis
+	// =========================================================
 	await client.fetchQuests(false);
-	let questsValid = client.questManager!.filterQuestsValidToDo();
-
-	if (QUEST_FILTER) {
-		questsValid = questsValid.filter(
-			(q) => q.config.messages.quest_name === QUEST_FILTER
-		);
-		console.log(`Filtro ativo: "${QUEST_FILTER}"`);
-	}
-
+	const questsValid = client.questManager!.filterQuestsValidToDo();
 	const total = questsValid.length;
-	console.log(`Found ${total} valid quests to do.`);
 
-	if (total > 0) {
-		await sendDM(
-			`<a:653548lightning:1555258800301154374> **Auto Quest iniciado!**\n\n` +
-				`Encontrei **${total}** quest(s).\n` +
-				`Vou executá-las **uma por vez** e te avisar a cada conclusão.`
-		);
+	console.log(`Found ${total} valid quests.`);
+	await sendDM(
+		`👻 **Auto Quest iniciado!**\n\n` +
+			`Detectei **${total}** quest(s) disponíveis.\n` +
+			`Vou executar **uma por vez** com **3 minutos de intervalo** entre cada.\n\n` +
+			`Você receberá uma DM a cada conclusão.`
+	);
+
+	if (total === 0) {
+		await sendDM('⚠️ Nenhuma quest disponível no momento.');
+		await client.destroy();
+		return;
 	}
 
+	// =========================================================
+	// Executa 1 por 1 com delay de 3 minutos
+	// =========================================================
 	const completed: string[] = [];
 	const failed: { name: string; err: string }[] = [];
 
 	for (const [i, quest] of questsValid.entries()) {
 		const name = quest.config.messages.quest_name;
 		const game = quest.config.messages.game_title;
-		const publisher = quest.config.messages.game_publisher;
 		const prefix = `[${i + 1}/${total}]`;
-
-		// Tenta pegar o hero real
-		const heroHash = quest.config.assets?.hero;
-		const heroUrl = heroHash
-			? `https://cdn.discordapp.com/${heroHash}`
-			: null;
 
 		console.log(`\n${prefix} Starting: "${name}"`);
 
@@ -85,21 +72,13 @@ client.once(GatewayDispatchEvents.Ready, async ({ data, api }) => {
 			completed.push(name);
 			console.log(`${prefix} ✅ Completed: "${name}"`);
 
-			// DM de quest concluída COM embed + capa
-			const embed = new EmbedBuilder()
-				.setAuthor({ name: 'Auto Quest • Concluída', iconURL: `https://cdn.discordapp.com/${heroHash}` })
-				.setTitle(name)
-				.setDescription(
-					`🎮 **${game}**\n🏢 ${publisher}\n\n` +
-						`${EMOJI_MENTION_FALLBACK} **Progresso:** ${completed.length}/${total}`
-				)
-				.setColor(0x2ecc71)
-				.setFooter({ text: 'Continuando para a próxima...' })
-				.setTimestamp();
-
-			if (heroUrl) embed.setImage(heroUrl);
-
-			await sendDM({ embeds: [embed] });
+			// DM de conclusão
+			await sendDM(
+				`✅ **Quest concluída!**\n\n` +
+					`**Nome:** ${name}\n` +
+					`**Jogo:** ${game}\n` +
+					`**Progresso:** ${completed.length}/${total}`
+			);
 		} catch (err: any) {
 			const msg = err?.message ?? String(err);
 			failed.push({ name, err: msg });
@@ -108,18 +87,23 @@ client.once(GatewayDispatchEvents.Ready, async ({ data, api }) => {
 			await sendDM(
 				`❌ **Quest falhou**\n\n` +
 					`**Nome:** ${name}\n` +
-					`**Erro:** \`${msg.slice(0, 200)}\`\n\n` +
-					`> Continuando...`
+					`**Erro:** \`${msg.slice(0, 200)}\``
 			);
+		}
+
+		// Delay de 3 minutos antes da próxima (exceto depois da última)
+		if (i < total - 1) {
+			console.log(`${prefix} Aguardando 3 minutos antes da próxima quest...`);
+			await sendDM(
+				`⏳ Aguardando **3 minutos** antes da próxima quest... (${i + 1}/${total} feitas)`
+			);
+			await new Promise((r) => setTimeout(r, DELAY_BETWEEN_QUESTS_MS));
 		}
 	}
 
-	console.log(`\nAll quests processed.`);
-	console.log(`   Success: ${completed.length}`);
-	console.log(`   Failed: ${failed.length}`);
-	console.log(`   Total: ${total}`);
-
+	// =========================================================
 	// Auto-redeem
+	// =========================================================
 	try {
 		await client.fetchQuests(false);
 		const toRedeem = client.questManager!.filterQuestsValidToRedeem();
@@ -129,14 +113,16 @@ client.once(GatewayDispatchEvents.Ready, async ({ data, api }) => {
 				await client.questManager!.redeemQuest(quest);
 				await sendDM(`🎁 **Recompensa resgatada:** ${name}`);
 			} catch (err: any) {
-				console.error(`Redeem falhou: ${err?.message ?? err}`);
+				console.error(`Redeem error: ${err?.message ?? err}`);
 			}
 		}
 	} catch (err: any) {
-		console.error(`Erro no auto-redeem: ${err?.message ?? err}`);
+		console.error(`Auto-redeem error: ${err?.message ?? err}`);
 	}
 
+	// =========================================================
 	// DM final
+	// =========================================================
 	let summary = '🏁 **Auto Quest finalizado!**\n\n';
 	summary += `**Total:** ${total}\n`;
 	summary += `**✅ Concluídas:** ${completed.length}\n`;
@@ -150,16 +136,13 @@ client.once(GatewayDispatchEvents.Ready, async ({ data, api }) => {
 		summary += '\n**Falhas:**\n';
 		failed.forEach((f) => (summary += `• ${f.name} — \`${f.err.slice(0, 80)}\`\n`));
 	}
-	summary += '\n> Resgate suas recompensas no Discord!';
+	summary += '\n👻 Resgate suas recompensas no Discord!';
 
 	await sendDM(summary);
 
 	console.log('All quests processed. Disconnecting...');
 	await client.destroy();
 });
-
-// Fallback caso o emoji não resolva dentro do bot.ts
-const EMOJI_MENTION_FALLBACK = '<a:653548lightning:1555258800301154374>';
 
 process.on('unhandledRejection', (r) => console.error('[Error] Unhandled Rejection:', r));
 process.on('uncaughtException', (e) => console.error('Uncaught Exception:', e.message));
