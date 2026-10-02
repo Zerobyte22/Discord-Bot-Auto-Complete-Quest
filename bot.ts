@@ -181,4 +181,4 @@ async function main() {
 main().catch((e) => {
 	console.error('[bot.ts] erro fatal:', e);
 	process.exit(1);
-});
+});a
