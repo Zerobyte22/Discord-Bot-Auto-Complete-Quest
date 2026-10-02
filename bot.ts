@@ -1,65 +1,102 @@
-// ✅ IMPORTS CORRETOS — arquivos estão em ./src/
-import { ClientQuest } from './src/client';
+import { ClientQuest } from './client';
 
 const MODE = process.env.QUEST_MODE ?? process.env.MODE ?? '';
 const TOKEN = process.env.TOKEN;
+const QUEST_ID = process.env.QUEST_ID ?? '';
 
 if (!TOKEN) {
 	console.error('[bot.ts] TOKEN ausente');
 	process.exit(1);
 }
 
-// ✅ FUNÇÃO PRINCIPAL — tudo roda aqui dentro
+function emit(event: string, payload: Record<string, any> = {}) {
+	console.log(`__EVT__${JSON.stringify({ event, ...payload })}__EVT__`);
+}
+
+function emitQuestData(quest: any) {
+	const config = quest.config ?? {};
+	const tasks = config.task_config_v2?.tasks ?? {};
+	const taskKeys = Object.keys(tasks);
+	const task = taskKeys[0] ?? 'UNKNOWN';
+	const target = tasks[task]?.target ?? 0;
+	const done = quest.userStatus?.progress?.[task]?.value ?? 0;
+	const rewards = config.rewards_config?.rewards ?? [];
+	const firstReward = rewards[0] ?? {};
+
+	console.log(
+		`__QUEST_DATA__${JSON.stringify({
+			id: quest.id,
+			name: config.messages?.quest_name ?? 'Quest',
+			game: config.messages?.game_title ?? '',
+			publisher: config.messages?.game_publisher ?? '',
+			hero: config.assets?.hero ?? null,
+			tile: config.assets?.game_tile ?? null,
+			logo: config.assets?.logotype ?? null,
+			primaryColor: config.colors?.primary ?? null,
+			secondaryColor: config.colors?.secondary ?? null,
+			current: done,
+			total: target,
+			task,
+			orbs: firstReward.orb_quantity ?? 0,
+			rewardName: firstReward.messages?.name ?? null,
+			rewardAsset: firstReward.asset ?? null,
+			startsAt: config.starts_at ?? null,
+			expiresAt: config.expires_at ?? null,
+			cosponsor: config.cosponsor_metadata?.name ?? null,
+			enrolled: Boolean(quest.userStatus?.enrolled_at),
+		})}__QUEST_DATA__`
+	);
+}
+
+async function safeDestroy(client: ClientQuest) {
+	try {
+		await client.destroy();
+	} catch (e: any) {
+		console.log(`[bot.ts] destroy falhou (ignorado): ${e?.message ?? e}`);
+	}
+}
+
 async function main() {
 	const client = new ClientQuest(TOKEN!);
 
-	// ✅ 1) CONECTA AO GATEWAY (obrigatório antes de qualquer REST)
-	console.log('[bot.ts] Conectando...');
+	// ✅ 1) Conecta
 	try {
 		await client.connect();
-		console.log('[bot.ts] ✅ Conectado');
 	} catch (e: any) {
-		console.error(`[bot.ts] ❌ connect() falhou: ${e?.message ?? e}`);
+		console.error(`[bot.ts] connect falhou: ${e?.message ?? e}`);
+		emit('error', { code: 'TOKEN_EXPIRED', message: String(e?.message ?? e) });
 		process.exit(2);
 	}
 
-	// ✅ 2) BUSCA DADOS DO USUÁRIO (/users/@me)
-	let data: any = null;
+	// ✅ 2) VALIDA O TOKEN com o endpoint real /quests/@me (mesmo do fetchQuests)
+	try {
+		await client.rest.get('/quests/@me');
+		console.log(`[bot.ts] ✅ Token válido`);
+	} catch (e: any) {
+		const msg = String(e?.message ?? e);
+		const isAuth =
+			msg.includes('401') ||
+			msg.includes('Unauthorized') ||
+			e?.status === 401 ||
+			e?.rawError?.code === 0;
+		console.error(`[bot.ts] ❌ Token inválido: ${msg}`);
+		emit('error', { code: isAuth ? 'TOKEN_EXPIRED' : 'UNKNOWN', message: msg });
+		await safeDestroy(client);
+		process.exit(2);
+	}
 
+	// ✅ 3) Busca dados do usuário (fallback triplo)
+	let data: any = null;
 	try {
 		data = await client.rest.get('/users/@me');
 		console.log(`[bot.ts] ✅ /users/@me OK: ${data?.username} (${data?.id})`);
 	} catch (e: any) {
-		console.log(`[bot.ts] ⚠️ /users/@me falhou: ${e?.message ?? e}`);
-	}
-
-	// Fallback 1: pega do gateway (client.user)
-	if (!data?.id) {
-		try {
-			const wsClient = (client as any).user;
-			if (wsClient?.id) {
-				data = wsClient;
-				console.log(`[bot.ts] ✅ fallback gateway: ${data.username} (${data.id})`);
-			}
-		} catch {}
-	}
-
-	// Fallback 2: tenta com header Android
-	if (!data?.id) {
-		try {
-			data = await client.rest.get('/users/@me', {
-				headers: { 'User-Agent': 'Discord-Android/316011;RNA' } as any,
-			});
-			console.log(`[bot.ts] ✅ fallback Android: ${data?.username} (${data?.id})`);
-		} catch (e: any) {
-			console.log(`[bot.ts] ⚠️ Android falhou: ${e?.message ?? e}`);
-		}
+		console.log(`[bot.ts] /users/@me falhou: ${e?.message ?? e}`);
 	}
 
 	if (!data?.id) {
-		console.error('[bot.ts] ❌ Não consegui obter dados do usuário');
-		console.error('[bot.ts] Token provavelmente inválido');
-		try { await client.destroy(); } catch {}
+		console.error('[bot.ts] ❌ Não consegui obter usuário');
+		await safeDestroy(client);
 		process.exit(1);
 	}
 
@@ -79,9 +116,7 @@ async function main() {
 			questsList: [],
 		};
 
-		// ✅ TUDO NUMA LINHA (a regex do index.ts é por linha)
 		console.log(`__PROFILE_JSON_START__${JSON.stringify(baseProfile)}__PROFILE_JSON_END__`);
-		console.log('[profile] Perfil base enviado');
 
 		try {
 			const timeoutPromise = new Promise((_, reject) =>
@@ -122,94 +157,66 @@ async function main() {
 				};
 			});
 
-			const fullProfile = {
-				...baseProfile,
-				quests: quests.length,
-				orbs: totalOrbs,
-				questsList,
-			};
+			const fullProfile = { ...baseProfile, quests: quests.length, orbs: totalOrbs, questsList };
 			console.log(`__PROFILE_JSON_START__${JSON.stringify(fullProfile)}__PROFILE_JSON_END__`);
 			console.log(`[profile] OK: ${quests.length} quests, ${totalOrbs} orbs`);
 		} catch (err: any) {
 			console.log(`[profile] fetchQuests falhou: ${err?.message ?? err}`);
 		}
 
-		try { await client.destroy(); } catch {}
+		await safeDestroy(client);
 		process.exit(0);
 	}
 
 	// ========================================================
 	// MODO QUEST_SINGLE
 	// ========================================================
-	if (MODE === 'quest_single') {
-		const QUEST_ID = process.env.QUEST_ID ?? '';
+	if (MODE === 'quest_single' && QUEST_ID) {
 		console.log(`[quest_single] Executando ${QUEST_ID}...`);
-
-		console.log(`__EVT__${JSON.stringify({ event: 'found', count: 1 })}__EVT__`);
+		emit('found', { count: 1 });
 
 		try {
 			await client.fetchQuests(false);
 			const quest = client.questManager!.get(QUEST_ID);
-
 			if (!quest) {
 				console.log(`[quest_single] não encontrada`);
-				console.log(`__EVT__${JSON.stringify({ event: 'fail', name: QUEST_ID, error: 'não encontrada' })}__EVT__`);
-				try { await client.destroy(); } catch {}
+				emit('fail', { name: QUEST_ID, error: 'não encontrada' });
+				await safeDestroy(client);
 				process.exit(0);
 			}
 
 			const name = quest.config.messages.quest_name;
-			console.log(`__EVT__${JSON.stringify({ event: 'start', index: 1, total: 1, name, id: quest.id })}__EVT__`);
-
-			const cfg = quest.config as any;
-			const tasks = cfg.task_config_v2?.tasks ?? {};
-			const task = Object.keys(tasks)[0] ?? 'UNKNOWN';
-			const target = tasks[task]?.target ?? 0;
-			const done = quest.userStatus?.progress?.[task]?.value ?? 0;
-			const rewards = cfg.rewards_config?.rewards ?? [];
-
-			console.log(`__QUEST_DATA__${JSON.stringify({
-				id: quest.id,
-				name,
-				game: cfg.messages?.game_title ?? '',
-				publisher: cfg.messages?.game_publisher ?? '',
-				hero: cfg.assets?.hero ?? null,
-				tile: cfg.assets?.game_tile ?? null,
-				task,
-				orbs: rewards.reduce((a: number, r: any) => a + (r.orb_quantity ?? 0), 0),
-				current: done,
-				total: target,
-				startsAt: cfg.starts_at ?? null,
-				expiresAt: cfg.expires_at ?? null,
-				cosponsor: cfg.cosponsor_metadata?.name ?? null,
-				primaryColor: cfg.colors?.primary ?? null,
-			})}__QUEST_DATA__`);
+			emit('start', { index: 1, total: 1, name, id: quest.id });
+			emitQuestData(quest);
 
 			const progressInterval = setInterval(() => {
-				const d = quest.userStatus?.progress?.[task]?.value ?? 0;
-				console.log(`__PROGRESS_UPDATE__${JSON.stringify({
-					id: quest.id,
-					current: d,
-					total: target,
-				})}__PROGRESS_UPDATE__`);
+				try {
+					const task = Object.keys((quest.config as any).task_config_v2?.tasks ?? {})[0];
+					if (!task) return;
+					const target = (quest.config as any).task_config_v2.tasks[task].target;
+					const done = quest.userStatus?.progress?.[task]?.value ?? 0;
+					console.log(
+						`__PROGRESS_UPDATE__${JSON.stringify({ id: quest.id, current: done, total: target })}__PROGRESS_UPDATE__`
+					);
+				} catch {}
 			}, 5 * 1000);
 
 			try {
 				await client.questManager!.doingQuest(quest);
 				clearInterval(progressInterval);
 				console.log(`Completed: "${name}"`);
-				console.log(`__EVT__${JSON.stringify({ event: 'done', name, id: quest.id })}__EVT__`);
+				emit('done', { name, id: quest.id });
 			} catch (err: any) {
 				clearInterval(progressInterval);
 				console.log(`Failed: "${name}" — ${err?.message ?? err}`);
-				console.log(`__EVT__${JSON.stringify({ event: 'fail', name, id: quest.id, error: String(err?.message) })}__EVT__`);
+				emit('fail', { name, id: quest.id, error: String(err?.message ?? err) });
 			}
 		} catch (err: any) {
 			console.log(`[quest_single] erro: ${err?.message ?? err}`);
-			console.log(`__EVT__${JSON.stringify({ event: 'fatal', error: String(err?.message) })}__EVT__`);
+			emit('fatal', { error: String(err?.message ?? err) });
 		}
 
-		try { await client.destroy(); } catch {}
+		await safeDestroy(client);
 		process.exit(0);
 	}
 
@@ -226,26 +233,22 @@ async function main() {
 		try {
 			await client.fetchQuests(false);
 			const quests = client.questManager!.filterQuestsValidToDo();
-			console.log(`Found ${quests.length} valid quests`);
-			console.log(`__EVT__${JSON.stringify({ event: 'found', count: quests.length })}__EVT__`);
+			emit('found', { count: quests.length });
 
 			if (quests.length === 0) {
-				try { await client.destroy(); } catch {}
+				await safeDestroy(client);
 				process.exit(0);
 			}
 
 			const runQuest = async (quest: any, idx: number, total: number) => {
 				const name = quest.config.messages.quest_name;
-				console.log(`[${idx}/${total}] Starting: "${name}"`);
-				console.log(`__EVT__${JSON.stringify({ event: 'start', index: idx, total, name, id: quest.id })}__EVT__`);
-
+				emit('start', { index: idx, total, name, id: quest.id });
+				emitQuestData(quest);
 				try {
 					await client.questManager!.doingQuest(quest);
-					console.log(`Completed: "${name}"`);
-					console.log(`__EVT__${JSON.stringify({ event: 'done', name, id: quest.id })}__EVT__`);
+					emit('done', { name, id: quest.id });
 				} catch (err: any) {
-					console.log(`Failed: "${name}" — ${err?.message ?? err}`);
-					console.log(`__EVT__${JSON.stringify({ event: 'fail', name, id: quest.id, error: String(err?.message) })}__EVT__`);
+					emit('fail', { name, id: quest.id, error: String(err?.message ?? err) });
 				}
 			};
 
@@ -264,9 +267,13 @@ async function main() {
 		} catch (err: any) {
 			console.log(`[quest] erro: ${err?.message ?? err}`);
 		}
+
+		await safeDestroy(client);
+		process.exit(0);
 	}
 
-	try { await client.destroy(); } catch {}
+	console.log(`[bot.ts] MODE inválido: ${MODE}`);
+	await safeDestroy(client);
 	process.exit(0);
 }
 
