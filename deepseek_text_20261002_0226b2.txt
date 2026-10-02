@@ -1,0 +1,21 @@
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ Bot online: SeuBot#1234
+🆔 Bot ID: 1234567890123456789
+🏠 Guild ID configurado: 1504422135303634994
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ Bot está no servidor: NomeDoServidor
+🧹 Limpando comandos antigos da guild...
+✅ Comandos antigos removidos.
+🔄 Registrando comandos na guild 1504422135303634994...
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+✅ 8 comandos registrados com SUCESSO!
+   1. /painel — Enviar o painel Auto Quest no canal
+   2. /token — Salvar seu token do Discord
+   3. /complete — Iniciar auto-complete das quests
+   4. /mytoken — Ver seu token salvo (parcialmente oculto)
+   5. /deltoken — Deletar seu token salvo
+   6. /perfil — Ver seu perfil e estatísticas
+   7. /help — Mostrar o menu de ajuda
+   8. /about — Sobre o sistema Auto Quest
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+💡 Se não aparecerem no Discord, feche e abra o app (Ctrl+R).
