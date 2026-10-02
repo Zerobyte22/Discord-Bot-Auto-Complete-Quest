@@ -11,12 +11,13 @@ client.once(GatewayDispatchEvents.Ready, async ({ data }) => {
 	console.log(`Logged in as @${data.user.username}`);
 
 	// =========================================================
-	// MODO PROFILE
+	// MODO PROFILE — retorna dados REAIS da conta do token
+	// (usa `data.user` que vem do GatewayDispatchEvents.Ready)
 	// =========================================================
 	if (MODE === 'profile') {
 		try {
-			await client.fetchQuests(false);
-			const quests = client.questManager!.filterQuestsValidToDo();
+			await client.fetchQuests(false);                      // API real: GET /quests/@me
+			const quests = client.questManager!.filterQuestsValidToDo();  // API real
 
 			const profile = {
 				id: data.user.id,
@@ -39,8 +40,8 @@ client.once(GatewayDispatchEvents.Ready, async ({ data }) => {
 	// =========================================================
 	// MODO EXECUÇÃO
 	// =========================================================
-	await client.fetchQuests(false);
-	const quests = client.questManager!.filterQuestsValidToDo();
+	await client.fetchQuests(false);                              // API real
+	const quests = client.questManager!.filterQuestsValidToDo();  // API real
 	const total = quests.length;
 
 	console.log(`Found ${total} valid quests. Mode: ${MODE}`);
@@ -51,12 +52,12 @@ client.once(GatewayDispatchEvents.Ready, async ({ data }) => {
 		process.exit(0);
 	}
 
-	// ✅ Helper de retry
+	// ✅ Helper com retry (3x)
 	async function runQuest(quest: any): Promise<boolean> {
 		const name = quest.config.messages.quest_name;
 		for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
 			try {
-				await client.questManager!.doingQuest(quest);
+				await client.questManager!.doingQuest(quest);    // API real
 				console.log(`Completed: "${name}"`);
 				return true;
 			} catch (err: any) {
@@ -91,12 +92,15 @@ client.once(GatewayDispatchEvents.Ready, async ({ data }) => {
 	}
 
 	// =========================================================
-	// AUTO-CLAIM
+	// AUTO-CLAIM — usa a API REAL filterQuestsValidToRedeem
+	// Depois do loop de execução, refaz fetch pra pegar status
+	// atualizado e resgata TODAS as recompensas disponíveis
 	// =========================================================
 	console.log('Checking rewards to claim...');
 	try {
-		await client.fetchQuests(false);
-		const toRedeem = client.questManager!.filterQuestsValidToRedeem();
+		await client.fetchQuests(false);                                  // API real
+		const toRedeem = client.questManager!.filterQuestsValidToRedeem(); // API real
+
 		console.log(`Found ${toRedeem.length} rewards to claim.`);
 
 		if (toRedeem.length === 0) {
@@ -105,6 +109,8 @@ client.once(GatewayDispatchEvents.Ready, async ({ data }) => {
 			for (const quest of toRedeem) {
 				const name = quest.config.messages.quest_name;
 				try {
+					// API real: POST /quests/{id}/claim-reward
+					// (o próprio redeemQuest() já resolve captcha se configurado)
 					await client.questManager!.redeemQuest(quest);
 					console.log(`Claimed: "${name}"`);
 				} catch (err: any) {
