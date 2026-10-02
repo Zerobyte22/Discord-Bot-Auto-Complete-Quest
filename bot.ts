@@ -1,4 +1,4 @@
-import { ClientQuest } from './client';
+import { ClientQuest } from './src/client';
 
 const MODE = process.env.QUEST_MODE ?? process.env.MODE ?? '';
 const TOKEN = process.env.TOKEN;
@@ -68,7 +68,7 @@ async function main() {
 		process.exit(2);
 	}
 
-	// ✅ 2) VALIDA O TOKEN com o endpoint real /quests/@me (mesmo do fetchQuests)
+	// ✅ 2) VALIDA O TOKEN com o endpoint real /quests/@me
 	try {
 		await client.rest.get('/quests/@me');
 		console.log(`[bot.ts] ✅ Token válido`);
@@ -85,7 +85,7 @@ async function main() {
 		process.exit(2);
 	}
 
-	// ✅ 3) Busca dados do usuário (fallback triplo)
+	// ✅ 3) Busca dados do usuário
 	let data: any = null;
 	try {
 		data = await client.rest.get('/users/@me');
