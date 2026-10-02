@@ -47,8 +47,8 @@ import { spawn } from 'child_process';
 // ============================================================
 // CONFIG
 // ============================================================
-const GUILD_ID = '1555393892399185960';
-const ALLOWED_CHANNEL = '1555610749647200366';
+const GUILD_ID = '1554466919497867355';
+const ALLOWED_CHANNEL = '1555659696759767070';
 const OWNER_ID = '1508337872254795877';
 const AUTO_DELETE_MS = 2 * 60 * 1000;
 const LOG_FILE = path.join(__dirname, 'auto-quest.log');
