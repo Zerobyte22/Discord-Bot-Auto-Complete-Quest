@@ -1,25 +1,42 @@
-// ✅ MODE lido do env (o index.ts manda QUEST_MODE)
-const MODE = process.env.QUEST_MODE ?? process.env.MODE ?? '';
+// ✅ IMPORTS CORRETOS — arquivos em src/
+import { ClientQuest } from './src/client';
+import { Constants } from './src/constants';
 
+// ✅ MODE lido do env
+const MODE = process.env.QUEST_MODE ?? process.env.MODE ?? '';
+const TOKEN = process.env.TOKEN;
+
+if (!TOKEN) {
+	console.error('[bot.ts] TOKEN ausente');
+	process.exit(1);
+}
+
+// ✅ client + data globais (igual ao seu bot.ts original)
+const client = new ClientQuest(TOKEN);
+
+await client.connect();
+const data = (await client.rest.get('/users/@me')) as any;
+
+// ============================================================
+// MODO PROFILE
+// ============================================================
 if (MODE === 'profile') {
 	console.log('[profile] Iniciando...');
 
-	// ✅ 1. Imprime o perfil BASE imediatamente (não depende de fetchQuests)
 	const baseProfile = {
-		id: data.user.id,
-		username: data.user.username,
-		global_name: (data.user as any).global_name ?? null,
-		avatar: (data.user as any).avatar ?? null,
+		id: data.id,
+		username: data.username,
+		global_name: data.global_name ?? null,
+		avatar: data.avatar ?? null,
 		quests: 0,
 		orbs: 0,
 		questsList: [],
 	};
 
-	// ✅ FIX: TUDO NUMA LINHA SÓ (a regex do index.ts é por linha)
+	// ✅ TUDO NUMA LINHA (a regex do index.ts é por linha)
 	console.log(`__PROFILE_JSON_START__${JSON.stringify(baseProfile)}__PROFILE_JSON_END__`);
 	console.log('[profile] Perfil base enviado');
 
-	// ✅ 2. Tenta buscar quests (timeout curto)
 	try {
 		const timeoutPromise = new Promise((_, reject) =>
 			setTimeout(() => reject(new Error('timeout')), 15 * 1000)
@@ -27,7 +44,6 @@ if (MODE === 'profile') {
 		await Promise.race([client.fetchQuests(false), timeoutPromise]);
 		const quests = client.questManager!.filterQuestsValidToDo();
 
-		// ✅ Monta a lista completa de quests
 		let totalOrbs = 0;
 		const questsList = quests.map((q) => {
 			const cfg = q.config as any;
@@ -67,7 +83,7 @@ if (MODE === 'profile') {
 			questsList,
 		};
 		console.log(`__PROFILE_JSON_START__${JSON.stringify(fullProfile)}__PROFILE_JSON_END__`);
-		console.log(`[profile] Perfil completo: ${quests.length} quests`);
+		console.log(`[profile] OK: ${quests.length} quests, ${totalOrbs} orbs`);
 	} catch (err: any) {
 		console.log(`[profile] fetchQuests falhou: ${err?.message ?? err}`);
 	}
@@ -76,10 +92,12 @@ if (MODE === 'profile') {
 	process.exit(0);
 }
 
-// ✅ MODO QUEST_SINGLE — executa UMA quest específica
+// ============================================================
+// MODO QUEST_SINGLE
+// ============================================================
 if (MODE === 'quest_single') {
 	const QUEST_ID = process.env.QUEST_ID ?? '';
-	console.log(`[quest_single] Executando quest ${QUEST_ID}...`);
+	console.log(`[quest_single] Executando ${QUEST_ID}...`);
 
 	console.log(`__EVT__${JSON.stringify({ event: 'found', count: 1 })}__EVT__`);
 
@@ -88,7 +106,7 @@ if (MODE === 'quest_single') {
 		const quest = client.questManager!.get(QUEST_ID);
 
 		if (!quest) {
-			console.log(`[quest_single] Quest ${QUEST_ID} não encontrada`);
+			console.log(`[quest_single] não encontrada`);
 			console.log(`__EVT__${JSON.stringify({ event: 'fail', name: QUEST_ID, error: 'não encontrada' })}__EVT__`);
 			await client.destroy();
 			process.exit(0);
@@ -97,7 +115,6 @@ if (MODE === 'quest_single') {
 		const name = quest.config.messages.quest_name;
 		console.log(`__EVT__${JSON.stringify({ event: 'start', index: 1, total: 1, name, id: quest.id })}__EVT__`);
 
-		// Emite __QUEST_DATA__ pra embed
 		const cfg = quest.config as any;
 		const tasks = cfg.task_config_v2?.tasks ?? {};
 		const task = Object.keys(tasks)[0] ?? 'UNKNOWN';
@@ -122,7 +139,6 @@ if (MODE === 'quest_single') {
 			primaryColor: cfg.colors?.primary ?? null,
 		})}__QUEST_DATA__`);
 
-		// Progress tracker
 		const progressInterval = setInterval(() => {
 			const d = quest.userStatus?.progress?.[task]?.value ?? 0;
 			console.log(`__PROGRESS_UPDATE__${JSON.stringify({
@@ -143,7 +159,7 @@ if (MODE === 'quest_single') {
 			console.log(`__EVT__${JSON.stringify({ event: 'fail', name, id: quest.id, error: String(err?.message) })}__EVT__`);
 		}
 	} catch (err: any) {
-		console.log(`[quest_single] Erro: ${err?.message ?? err}`);
+		console.log(`[quest_single] erro: ${err?.message ?? err}`);
 		console.log(`__EVT__${JSON.stringify({ event: 'fatal', error: String(err?.message) })}__EVT__`);
 	}
 
@@ -151,14 +167,16 @@ if (MODE === 'quest_single') {
 	process.exit(0);
 }
 
-// ✅ Modos em lote (compatibilidade)
+// ============================================================
+// MODOS EM LOTE
+// ============================================================
 if (
 	MODE === 'sequential_no_delay' ||
 	MODE === 'sequential_delay' ||
 	MODE === 'all_parallel' ||
 	MODE === 'all_delay'
 ) {
-	console.log(`[quest] Modo: ${MODE}`);
+	console.log(`[quest] modo ${MODE}`);
 	try {
 		await client.fetchQuests(false);
 		const quests = client.questManager!.filterQuestsValidToDo();
@@ -198,7 +216,7 @@ if (
 			}
 		}
 	} catch (err: any) {
-		console.log(`[quest] Erro: ${err?.message ?? err}`);
+		console.log(`[quest] erro: ${err?.message ?? err}`);
 	}
 
 	await client.destroy();
