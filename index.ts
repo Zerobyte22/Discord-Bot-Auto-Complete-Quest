@@ -22,7 +22,7 @@ import { exec } from 'child_process';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-const GUILD_ID = '1504422135303634994';
+const GUILD_ID = '1555393892399185960';
 
 // ============================================================
 // FAKE PORT (Render keep-alive)
