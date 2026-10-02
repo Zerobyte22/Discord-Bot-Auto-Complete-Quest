@@ -9,11 +9,36 @@ const MAX_RETRIES = 3;
 const RETRY_DELAY_MS = 30 * 1000;
 
 // ============================================================
-// EMIT QUEST DATA
+// EXTRAI ORBS DA QUEST (API real: rewards_config.rewards)
+// ============================================================
+function getQuestOrbs(quest: any): { orbs: number; rewardName: string | null } {
+	try {
+		const rewards = quest.config.rewards_config?.rewards ?? [];
+		let orbs = 0;
+		let rewardName: string | null = null;
+
+		for (const r of rewards) {
+			if (r.orb_quantity && r.orb_quantity > 0) {
+				orbs += r.orb_quantity;
+			}
+			if (!rewardName && r.messages?.name) {
+				rewardName = r.messages.name;
+			}
+		}
+		return { orbs, rewardName };
+	} catch {
+		return { orbs: 0, rewardName: null };
+	}
+}
+
+// ============================================================
+// EMIT QUEST DATA (com Orbs)
 // ============================================================
 function emitQuestData(quest: any, task: string, current: number) {
 	const hero = quest.config.assets?.hero ?? null;
 	const target = quest.config.task_config_v2.tasks[task]?.target ?? 100;
+	const { orbs, rewardName } = getQuestOrbs(quest);
+
 	const data = {
 		id: quest.id,
 		name: quest.config.messages.quest_name,
@@ -22,26 +47,18 @@ function emitQuestData(quest: any, task: string, current: number) {
 		current,
 		total: target,
 		task,
+		orbs,
+		rewardName,
 	};
 	console.log(`__QUEST_DATA__${JSON.stringify(data)}__QUEST_DATA__`);
 }
 
-// ============================================================
-// EMIT PROGRESS
-// ============================================================
 function emitProgress(quest: any, task: string, current: number) {
 	const target = quest.config.task_config_v2.tasks[task]?.target ?? 100;
-	const data = {
-		id: quest.id,
-		current,
-		total: target,
-	};
+	const data = { id: quest.id, current, total: target };
 	console.log(`__PROGRESS_UPDATE__${JSON.stringify(data)}__PROGRESS_UPDATE__`);
 }
 
-// ============================================================
-// DETECTAR TIPO DE TASK
-// ============================================================
 function getTaskName(quest: any): string {
 	const tasks = quest.config.task_config_v2.tasks;
 	const order = [
@@ -60,15 +77,10 @@ function getTaskName(quest: any): string {
 	return 'UNKNOWN';
 }
 
-// ============================================================
-// READY
-// ============================================================
 client.once(GatewayDispatchEvents.Ready, async ({ data }) => {
 	console.log(`Logged in as @${data.user.username}`);
 
-	// =========================================================
 	// MODO PROFILE
-	// =========================================================
 	if (MODE === 'profile') {
 		try {
 			await client.fetchQuests(false);
@@ -92,15 +104,12 @@ client.once(GatewayDispatchEvents.Ready, async ({ data }) => {
 		process.exit(0);
 	}
 
-	// =========================================================
-	// MODO CLAIM ONLY — só resgata recompensas
-	// =========================================================
+	// MODO CLAIM ONLY
 	if (MODE === 'claim_only') {
 		console.log('Checking rewards to claim...');
 		try {
 			await client.fetchQuests(false);
 			const toRedeem = client.questManager!.filterQuestsValidToRedeem();
-
 			console.log(`Found ${toRedeem.length} rewards to claim.`);
 
 			if (toRedeem.length === 0) {
@@ -119,19 +128,14 @@ client.once(GatewayDispatchEvents.Ready, async ({ data }) => {
 		} catch (err: any) {
 			console.log(`Claim check error: ${err?.message ?? err}`);
 		}
-
-		console.log('All done. Disconnecting...');
 		await client.destroy();
 		process.exit(0);
 	}
 
-	// =========================================================
-	// MODO EXECUÇÃO (SEM auto-claim no final)
-	// =========================================================
+	// MODO EXECUÇÃO
 	await client.fetchQuests(false);
 	const quests = client.questManager!.filterQuestsValidToDo();
 	const total = quests.length;
-
 	console.log(`Found ${total} valid quests. Mode: ${MODE}`);
 
 	if (total === 0) {
@@ -155,7 +159,6 @@ client.once(GatewayDispatchEvents.Ready, async ({ data }) => {
 	async function runQuest(quest: any): Promise<boolean> {
 		const name = quest.config.messages.quest_name;
 		const taskName = getTaskName(quest);
-
 		const stopMonitor = startProgressMonitor(quest, taskName);
 
 		for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
